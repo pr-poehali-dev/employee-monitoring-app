@@ -1,0 +1,27 @@
+{
+  "tests": [
+    {
+      "name": "Получить список всех сотрудников",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": [{"id": 1}],
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Регистрация входа сотрудника",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "employee_id": 1,
+        "event_type": "entry",
+        "checkpoint_id": 1
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "success": true
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

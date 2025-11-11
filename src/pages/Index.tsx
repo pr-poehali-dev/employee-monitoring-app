@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,129 +9,114 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import Icon from '@/components/ui/icon';
 
-type EmployeeStatus = 'active' | 'offline' | 'onBreak';
+const API_URL = 'https://functions.poehali.dev/0357c22e-e210-46eb-a41a-11a98cedfaa8';
+
+type EmployeeStatus = 'active' | 'offline';
 
 interface Employee {
   id: number;
-  name: string;
+  full_name: string;
   position: string;
   status: EmployeeStatus;
-  checkInTime?: string;
-  checkOutTime?: string;
   phone: string;
-  hoursToday: number;
 }
 
-const initialEmployees: Employee[] = [
-  {
-    id: 1,
-    name: 'Иван Петров',
-    position: 'Прораб',
-    status: 'active',
-    checkInTime: '08:00',
-    phone: '+7 (999) 123-45-67',
-    hoursToday: 4.5,
-  },
-  {
-    id: 2,
-    name: 'Анна Сидорова',
-    position: 'Инженер',
-    status: 'active',
-    checkInTime: '08:15',
-    phone: '+7 (999) 234-56-78',
-    hoursToday: 4.25,
-  },
-  {
-    id: 3,
-    name: 'Михаил Козлов',
-    position: 'Монтажник',
-    status: 'onBreak',
-    checkInTime: '07:45',
-    phone: '+7 (999) 345-67-89',
-    hoursToday: 3.5,
-  },
-  {
-    id: 4,
-    name: 'Елена Волкова',
-    position: 'Техник',
-    status: 'offline',
-    checkOutTime: '17:00',
-    phone: '+7 (999) 456-78-90',
-    hoursToday: 8,
-  },
-];
-
 const Index = () => {
-  const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [inputId, setInputId] = useState('');
-  const [actionType, setActionType] = useState<'checkIn' | 'checkOut'>('checkIn');
+  const [actionType, setActionType] = useState<'entry' | 'exit'>('entry');
+  const [isAdmin, setIsAdmin] = useState(false);
   const { toast } = useToast();
+
+  const loadEmployees = async () => {
+    const response = await fetch(API_URL);
+    const data = await response.json();
+    setEmployees(data);
+  };
+
+  useEffect(() => {
+    loadEmployees();
+    const interval = setInterval(loadEmployees, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   const getStatusBadge = (status: EmployeeStatus) => {
     const statusConfig = {
-      active: { label: 'На объекте', variant: 'default' as const, color: 'bg-accent' },
-      offline: { label: 'Ушёл', variant: 'secondary' as const, color: 'bg-muted' },
-      onBreak: { label: 'Перерыв', variant: 'outline' as const, color: 'bg-yellow-100' },
+      active: { label: 'На объекте', color: 'bg-accent text-white' },
+      offline: { label: 'Ушёл', color: 'bg-muted text-muted-foreground' },
     };
     return statusConfig[status];
   };
 
   const openCheckInDialog = () => {
-    setActionType('checkIn');
+    setActionType('entry');
     setInputId('');
     setIsDialogOpen(true);
   };
 
   const openCheckOutDialog = () => {
-    setActionType('checkOut');
+    setActionType('exit');
     setInputId('');
     setIsDialogOpen(true);
   };
 
-  const handleSubmitId = () => {
+  const handleSubmitId = async () => {
     const employeeId = parseInt(inputId);
-    const employee = employees.find(emp => emp.id === employeeId);
 
-    if (!employee) {
+    if (!employeeId) {
       toast({
         title: 'Ошибка',
-        description: 'Сотрудник с таким ID не найден',
+        description: 'Введите корректный ID',
         variant: 'destructive',
       });
       return;
     }
 
-    const now = new Date();
-    const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-    if (actionType === 'checkIn') {
-      setEmployees(prev =>
-        prev.map(emp =>
-          emp.id === employeeId ? { ...emp, status: 'active' as EmployeeStatus, checkInTime: time, checkOutTime: undefined } : emp
-        )
-      );
-      toast({
-        title: 'Приход отмечен',
-        description: `${employee.name} прибыл на объект в ${time}`,
+    try {
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employee_id: employeeId,
+          event_type: actionType,
+          checkpoint_id: 1,
+        }),
       });
-    } else {
-      setEmployees(prev =>
-        prev.map(emp => (emp.id === employeeId ? { ...emp, status: 'offline' as EmployeeStatus, checkOutTime: time } : emp))
-      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        toast({
+          title: 'Доступ запрещён',
+          description: data.reason || 'Ошибка при регистрации',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const actionLabel = actionType === 'entry' ? 'прибыл на объект' : 'покинул объект';
+      const lateWarning = data.is_late ? ' (ОПОЗДАНИЕ)' : '';
+
       toast({
-        title: 'Уход отмечен',
-        description: `${employee.name} покинул объект в ${time}`,
+        title: actionType === 'entry' ? 'Приход отмечен' : 'Уход отмечен',
+        description: `${data.employee_name} ${actionLabel}${lateWarning}`,
+      });
+
+      setIsDialogOpen(false);
+      setInputId('');
+      loadEmployees();
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось выполнить операцию',
+        variant: 'destructive',
       });
     }
-
-    setIsDialogOpen(false);
-    setInputId('');
   };
 
   const activeCount = employees.filter(e => e.status === 'active').length;
-  const totalHours = employees.reduce((sum, e) => sum + e.hoursToday, 0);
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -139,7 +124,7 @@ const Index = () => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-2xl">
-              {actionType === 'checkIn' ? 'Отметить приход' : 'Отметить уход'}
+              {actionType === 'entry' ? 'Отметить приход' : 'Отметить уход'}
             </DialogTitle>
             <DialogDescription>
               Введите ваш ID сотрудника для идентификации
@@ -180,8 +165,13 @@ const Index = () => {
             <h1 className="text-2xl font-bold mb-1">Контроль объекта</h1>
             <p className="text-sm opacity-90">Управление сотрудниками</p>
           </div>
-          <Button variant="secondary" size="icon" className="rounded-full">
-            <Icon name="Settings" size={20} />
+          <Button 
+            variant="secondary" 
+            size="icon" 
+            className="rounded-full"
+            onClick={() => setIsAdmin(!isAdmin)}
+          >
+            <Icon name={isAdmin ? "Users" : "Settings"} size={20} />
           </Button>
         </div>
 
@@ -227,8 +217,8 @@ const Index = () => {
                   <Icon name="Clock" size={24} className="text-primary" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-foreground">{totalHours.toFixed(1)}</p>
-                  <p className="text-xs text-muted-foreground">Часов сегодня</p>
+                  <p className="text-2xl font-bold text-foreground">{employees.length}</p>
+                  <p className="text-xs text-muted-foreground">Всего сотрудников</p>
                 </div>
               </div>
             </CardContent>
@@ -264,30 +254,15 @@ const Index = () => {
                       <div className="flex items-center gap-3">
                         <Avatar className="h-12 w-12 border-2 border-border">
                           <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                            {employee.name.split(' ').map(n => n[0]).join('')}
+                            {employee.full_name.split(' ').map(n => n[0]).join('')}
                           </AvatarFallback>
                         </Avatar>
                         <div>
-                          <h3 className="font-semibold text-base">{employee.name}</h3>
+                          <h3 className="font-semibold text-base">{employee.full_name}</h3>
                           <p className="text-sm text-muted-foreground">{employee.position}</p>
                         </div>
                       </div>
                       <Badge className={statusConfig.color}>{statusConfig.label}</Badge>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 mb-3 text-sm">
-                      {employee.checkInTime && (
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                          <Icon name="LogIn" size={16} />
-                          <span>{employee.checkInTime}</span>
-                        </div>
-                      )}
-                      {employee.checkOutTime && (
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                          <Icon name="LogOut" size={16} />
-                          <span>{employee.checkOutTime}</span>
-                        </div>
-                      )}
                     </div>
 
                     <div className="text-xs text-muted-foreground">
@@ -306,11 +281,11 @@ const Index = () => {
                   <div className="flex items-center gap-4">
                     <Avatar className="h-20 w-20 border-4 border-primary/20">
                       <AvatarFallback className="bg-primary/10 text-primary font-bold text-2xl">
-                        {selectedEmployee.name.split(' ').map(n => n[0]).join('')}
+                        {selectedEmployee.full_name.split(' ').map(n => n[0]).join('')}
                       </AvatarFallback>
                     </Avatar>
                     <div>
-                      <CardTitle className="text-2xl mb-1">{selectedEmployee.name}</CardTitle>
+                      <CardTitle className="text-2xl mb-1">{selectedEmployee.full_name}</CardTitle>
                       <p className="text-muted-foreground">{selectedEmployee.position}</p>
                     </div>
                   </div>
@@ -329,40 +304,21 @@ const Index = () => {
                   <div>
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
                       <Icon name="BarChart3" size={18} />
-                      Статистика за сегодня
+                      Статус
                     </h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-secondary p-4 rounded-lg">
-                        <p className="text-sm text-muted-foreground mb-1">Часов на объекте</p>
-                        <p className="text-2xl font-bold">{selectedEmployee.hoursToday}</p>
-                      </div>
-                      <div className="bg-secondary p-4 rounded-lg">
-                        <p className="text-sm text-muted-foreground mb-1">Статус</p>
-                        <Badge className={getStatusBadge(selectedEmployee.status).color}>
-                          {getStatusBadge(selectedEmployee.status).label}
-                        </Badge>
-                      </div>
-                    </div>
+                    <Badge className={getStatusBadge(selectedEmployee.status).color + ' text-base py-2 px-4'}>
+                      {getStatusBadge(selectedEmployee.status).label}
+                    </Badge>
                   </div>
 
                   <div>
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
-                      <Icon name="Clock" size={18} />
-                      Время работы
+                      <Icon name="Key" size={18} />
+                      Идентификатор
                     </h3>
-                    <div className="space-y-2">
-                      {selectedEmployee.checkInTime && (
-                        <div className="flex justify-between items-center p-3 bg-secondary rounded-lg">
-                          <span className="text-sm text-muted-foreground">Приход</span>
-                          <span className="font-semibold">{selectedEmployee.checkInTime}</span>
-                        </div>
-                      )}
-                      {selectedEmployee.checkOutTime && (
-                        <div className="flex justify-between items-center p-3 bg-secondary rounded-lg">
-                          <span className="text-sm text-muted-foreground">Уход</span>
-                          <span className="font-semibold">{selectedEmployee.checkOutTime}</span>
-                        </div>
-                      )}
+                    <div className="bg-secondary p-4 rounded-lg">
+                      <p className="text-sm text-muted-foreground mb-1">ID сотрудника</p>
+                      <p className="text-2xl font-bold">{selectedEmployee.id}</p>
                     </div>
                   </div>
                 </CardContent>

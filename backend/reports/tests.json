@@ -1,0 +1,14 @@
+{
+  "tests": [
+    {
+      "name": "Получить ежедневный отчёт",
+      "method": "GET",
+      "path": "/?type=daily",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "report_type": "daily"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
