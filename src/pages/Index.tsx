@@ -4,6 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { useToast } from '@/hooks/use-toast';
 import Icon from '@/components/ui/icon';
 
 type EmployeeStatus = 'active' | 'offline' | 'onBreak';
@@ -61,6 +64,10 @@ const initialEmployees: Employee[] = [
 const Index = () => {
   const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [inputId, setInputId] = useState('');
+  const [actionType, setActionType] = useState<'checkIn' | 'checkOut'>('checkIn');
+  const { toast } = useToast();
 
   const getStatusBadge = (status: EmployeeStatus) => {
     const statusConfig = {
@@ -71,22 +78,56 @@ const Index = () => {
     return statusConfig[status];
   };
 
-  const handleCheckIn = (id: number) => {
-    const now = new Date();
-    const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    setEmployees(prev =>
-      prev.map(emp =>
-        emp.id === id ? { ...emp, status: 'active' as EmployeeStatus, checkInTime: time, checkOutTime: undefined } : emp
-      )
-    );
+  const openCheckInDialog = () => {
+    setActionType('checkIn');
+    setInputId('');
+    setIsDialogOpen(true);
   };
 
-  const handleCheckOut = (id: number) => {
+  const openCheckOutDialog = () => {
+    setActionType('checkOut');
+    setInputId('');
+    setIsDialogOpen(true);
+  };
+
+  const handleSubmitId = () => {
+    const employeeId = parseInt(inputId);
+    const employee = employees.find(emp => emp.id === employeeId);
+
+    if (!employee) {
+      toast({
+        title: 'Ошибка',
+        description: 'Сотрудник с таким ID не найден',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const now = new Date();
     const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    setEmployees(prev =>
-      prev.map(emp => (emp.id === id ? { ...emp, status: 'offline' as EmployeeStatus, checkOutTime: time } : emp))
-    );
+
+    if (actionType === 'checkIn') {
+      setEmployees(prev =>
+        prev.map(emp =>
+          emp.id === employeeId ? { ...emp, status: 'active' as EmployeeStatus, checkInTime: time, checkOutTime: undefined } : emp
+        )
+      );
+      toast({
+        title: 'Приход отмечен',
+        description: `${employee.name} прибыл на объект в ${time}`,
+      });
+    } else {
+      setEmployees(prev =>
+        prev.map(emp => (emp.id === employeeId ? { ...emp, status: 'offline' as EmployeeStatus, checkOutTime: time } : emp))
+      );
+      toast({
+        title: 'Уход отмечен',
+        description: `${employee.name} покинул объект в ${time}`,
+      });
+    }
+
+    setIsDialogOpen(false);
+    setInputId('');
   };
 
   const activeCount = employees.filter(e => e.status === 'active').length;
@@ -94,6 +135,45 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background pb-20">
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-2xl">
+              {actionType === 'checkIn' ? 'Отметить приход' : 'Отметить уход'}
+            </DialogTitle>
+            <DialogDescription>
+              Введите ваш ID сотрудника для идентификации
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <Input
+              type="number"
+              placeholder="Введите ID (например: 1234)"
+              value={inputId}
+              onChange={(e) => setInputId(e.target.value)}
+              className="text-lg h-12"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleSubmitId();
+                }
+              }}
+            />
+            <div className="text-sm text-muted-foreground">
+              Доступные ID для теста: 1, 2, 3, 4
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)} className="flex-1">
+              Отмена
+            </Button>
+            <Button onClick={handleSubmitId} className="flex-1">
+              Подтвердить
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <div className="bg-primary text-primary-foreground p-6 pb-8 shadow-lg">
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -102,6 +182,26 @@ const Index = () => {
           </div>
           <Button variant="secondary" size="icon" className="rounded-full">
             <Icon name="Settings" size={20} />
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <Button
+            size="lg"
+            onClick={openCheckInDialog}
+            className="bg-white/95 hover:bg-white text-primary h-auto py-4 flex flex-col gap-2 shadow-sm"
+          >
+            <Icon name="LogIn" size={28} />
+            <span className="font-semibold">Отметить приход</span>
+          </Button>
+          <Button
+            size="lg"
+            onClick={openCheckOutDialog}
+            variant="destructive"
+            className="h-auto py-4 flex flex-col gap-2 shadow-sm"
+          >
+            <Icon name="LogOut" size={28} />
+            <span className="font-semibold">Отметить уход</span>
           </Button>
         </div>
 
@@ -190,33 +290,8 @@ const Index = () => {
                       )}
                     </div>
 
-                    <div className="flex gap-2">
-                      {employee.status !== 'active' ? (
-                        <Button
-                          size="sm"
-                          className="flex-1"
-                          onClick={e => {
-                            e.stopPropagation();
-                            handleCheckIn(employee.id);
-                          }}
-                        >
-                          <Icon name="LogIn" size={16} className="mr-2" />
-                          Отметить приход
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          className="flex-1"
-                          onClick={e => {
-                            e.stopPropagation();
-                            handleCheckOut(employee.id);
-                          }}
-                        >
-                          <Icon name="LogOut" size={16} className="mr-2" />
-                          Отметить уход
-                        </Button>
-                      )}
+                    <div className="text-xs text-muted-foreground">
+                      ID сотрудника: {employee.id}
                     </div>
                   </CardContent>
                 </Card>
